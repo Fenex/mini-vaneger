@@ -25,7 +25,7 @@ pub struct Item {
 #[derive(Debug, Clone, Data, Serialize, Deserialize, Lens)]
 pub struct AppState {
     #[data(eq)]
-    pub resource_dir: Option<PathBuf>,
+    pub resource_dir: Option<String>,
     pub config: Config,
 }
 
