@@ -1,4 +1,4 @@
-use std::{fs::File, path::Path};
+use std::{fs::File, path::{Path, PathBuf}};
 
 use druid::{
     im, {Data, Lens},
@@ -9,6 +9,8 @@ use serde_json::Value;
 #[derive(Debug, Clone, Data, Default, Serialize, Deserialize, Lens)]
 pub struct Config {
     pub addons: im::Vector<Item>,
+    #[serde(skip)]
+    pub path: String,
 }
 
 #[derive(Debug, Clone, Data, Default, Serialize, PartialEq, Deserialize, Lens)]
@@ -22,18 +24,20 @@ pub struct Item {
 
 #[derive(Debug, Clone, Data, Serialize, Deserialize, Lens)]
 pub struct AppState {
-    pub path: String,
+    #[data(eq)]
+    pub resource_dir: Option<PathBuf>,
     pub config: Config,
 }
 
 impl AppState {
     pub fn new(path: &Path) -> Self {
         let f = File::open(path).unwrap();
-        let config = serde_json::from_reader(f).unwrap();
+        let mut config: Config = serde_json::from_reader(f).unwrap();
+        config.path = path.to_string_lossy().to_string();
 
         Self {
-            path: path.to_string_lossy().to_string(),
             config,
+            resource_dir: None
         }
     }
 }

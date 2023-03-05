@@ -97,7 +97,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                 let result = File::options()
                     .write(true)
                     .truncate(true)
-                    .open(&data.path)
+                    .open(&data.config.path)
                     .map(|w| serde_json::to_writer_pretty(w, &data.config));
 
                 if let Ok(Ok(())) = result {
