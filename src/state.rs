@@ -1,4 +1,4 @@
-use std::{fs::File, path::{Path, PathBuf}};
+use std::{fs::File, path::Path};
 
 use druid::{
     im, {Data, Lens},

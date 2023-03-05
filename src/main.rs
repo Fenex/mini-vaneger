@@ -14,13 +14,12 @@ pub const BTN_RESOURCE_CHOOSE_CLICKED: Selector<()> = Selector::new("button `cho
 pub const RESOURCES_DIR_CHOOSEN: Selector<FileInfo> = Selector::new("RESOURCES_DIR_CHOOSEN");
 
 const CONFIG_FILE_PATH: &str = "./scripts/ls.json";
-const PATH_TO_EXECUTE_PROGRAM: &str = "notepad.exe";
 
 pub fn main() -> Result<(), PlatformError> {
     let main_window = WindowDesc::new(ui_builder())
         // .resizable(false)
         // .window_size((500, 400))
-        .set_position((-1000.,50.))
+        // .set_position((-1000.,50.))
         .window_size((400., 300.))
         .title("vangers mini mod manager");
 
@@ -145,7 +144,7 @@ fn resource_dir_selector() -> impl Widget<Option<String>> {
         .with_child(Button::new("...").on_click(dlg_choose_resources))
 }
 
-fn dlg_choose_resources(ctx: &mut EventCtx, data: &mut Option<String>, env: &Env) {
+fn dlg_choose_resources(ctx: &mut EventCtx, _data: &mut Option<String>, _: &Env) {
     let fdialog = FileDialogOptions::new()
         .accept_command(RESOURCES_DIR_CHOOSEN)
         .select_directories()
