@@ -26,7 +26,7 @@ pub fn main() -> Result<(), PlatformError> {
     let main_window = WindowDesc::new(ui_builder())
         // .resizable(false)
         // .window_size((500, 400))
-        .set_position((-1000., 50.))
+        // .set_position((-1000., 50.))
         .window_size((500., 300.))
         .title("vangers mini mod manager");
 
@@ -109,6 +109,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                         .and_then(|p| p.parent())
                         .map(|p| p.to_owned().join("vss.exe"))
                         .unwrap();
+
                     let _ = process::Command::new(&vss)
                         .current_dir(path)
                         .args([
@@ -119,6 +120,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                         .spawn()
                         .expect("Cannot exec process");
                     ctx.set_handled();
+                    Application::global().quit();
                 }
             }
             druid::Event::Command(e) if e.is(RESOURCES_DIR_CHOOSEN) => {
