@@ -37,7 +37,7 @@ impl AppState {
 
         Self {
             config,
-            resource_dir: None
+            resource_dir: None,
         }
     }
 }

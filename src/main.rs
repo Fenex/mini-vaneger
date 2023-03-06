@@ -1,16 +1,23 @@
 mod state;
 
-use std::{fs::{File, canonicalize}, path::{Path, PathBuf}, process};
+use std::{
+    fs::{File, canonicalize},
+    path::Path,
+    process,
+};
 
 use druid::{
-    widget::{Button, Checkbox, Controller, Flex, Label, List, Scroll, TextBox},
-    AppLauncher, Application, LensExt, PlatformError, Selector, Widget, WidgetExt, WindowDesc, EventCtx, Env, FileDialogOptions, FileInfo, commands,
+    commands,
+    widget::{Button, Checkbox, Controller, Flex, Label, List, Scroll},
+    AppLauncher, Application, Data, Env, EventCtx, FileDialogOptions, FileInfo, LensExt,
+    PlatformError, Selector, Widget, WidgetExt, WindowDesc, UnitPoint,
 };
 
 use state::*;
 
 pub const BTN_RUN_CLICKED: Selector<()> = Selector::new("button `run` was clicked");
-pub const BTN_RESOURCE_CHOOSE_CLICKED: Selector<()> = Selector::new("button `choose resources` was clicked");
+pub const BTN_RESOURCE_CHOOSE_CLICKED: Selector<()> =
+    Selector::new("button `choose resources` was clicked");
 pub const RESOURCES_DIR_CHOOSEN: Selector<FileInfo> = Selector::new("RESOURCES_DIR_CHOOSEN");
 
 const CONFIG_FILE_PATH: &str = "./scripts/ls.json";
@@ -19,8 +26,8 @@ pub fn main() -> Result<(), PlatformError> {
     let main_window = WindowDesc::new(ui_builder())
         // .resizable(false)
         // .window_size((500, 400))
-        // .set_position((-1000.,50.))
-        .window_size((400., 300.))
+        .set_position((-1000., 50.))
+        .window_size((500., 300.))
         .title("vangers mini mod manager");
 
     AppLauncher::with_window(main_window)
@@ -29,14 +36,16 @@ pub fn main() -> Result<(), PlatformError> {
 }
 
 fn ui_builder() -> impl Widget<AppState> {
-    let scroll = Scroll::new(List::new(item)).vertical()
+    let scroll = Scroll::new(List::new(item))
+        .vertical()
         .lens(AppState::config.then(Config::addons));
     let buttons = Flex::row()
         .with_child(
-            Button::from_label(Label::new("Run").with_text_size(25.)).on_click(|ctx, _, _| {
-                ctx.submit_notification(BTN_RUN_CLICKED);
-            })
-            .disabled_if(|d: &AppState, _| d.resource_dir.is_none()),
+            Button::from_label(Label::new("Run").with_text_size(25.))
+                .on_click(|ctx, _, _| {
+                    ctx.submit_notification(BTN_RUN_CLICKED);
+                })
+                .disabled_if(|d: &AppState, _| d.resource_dir.is_none()),
         )
         .with_spacer(20.)
         .with_child(
@@ -46,11 +55,23 @@ fn ui_builder() -> impl Widget<AppState> {
         .align_left();
 
     Flex::column()
-        .with_flex_child(scroll, 1.0)
-        .with_child(resource_dir_selector().lens(AppState::resource_dir))
+        .with_flex_child(block("Modifications:", scroll), 1.0)
+        .with_child(block(
+            "Vangers' resources:",
+            resource_dir_selector().lens(AppState::resource_dir),
+        ))
+        .with_spacer(5.)
         .with_child(buttons)
         .padding(10.)
         .controller(MainController)
+        // .debug_paint_layout()
+}
+
+fn block<W: Widget<T> + 'static, T: Data>(name: &str, inner: W) -> impl Widget<T> {
+    Flex::column()
+        .with_child(Label::new(name).with_text_size(22.0).align_left())
+        .with_child(inner.padding((15., 0., 0., 0.)))
+        .align_vertical(UnitPoint::TOP_LEFT)
 }
 
 fn item() -> impl Widget<Item> {
@@ -58,7 +79,7 @@ fn item() -> impl Widget<Item> {
         .with_child(Checkbox::new("").lens(Item::enabled))
         .with_flex_child(
             Label::dynamic(|data: &String, _| data.to_string())
-                .with_text_size(20.)
+                .with_text_size(18.)
                 .expand_width()
                 .lens(Item::name),
             1.0,
@@ -79,20 +100,27 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
     ) {
         match event {
             druid::Event::Notification(e) if e.is(BTN_RUN_CLICKED) => {
-                if let Some(ref dir)= data.resource_dir {
+                if let Some(ref dir) = data.resource_dir {
                     let path = canonicalize(dir).unwrap();
                     let ls_json_path = canonicalize(&data.config.path).unwrap();
                     let ls_json = ls_json_path.parent().unwrap().to_string_lossy().to_string();
-                    let vss = ls_json_path.parent().and_then(|p| p.parent()).map(|p| p.to_owned().join("vss.exe")).unwrap();
+                    let vss = ls_json_path
+                        .parent()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.to_owned().join("vss.exe"))
+                        .unwrap();
                     let _ = process::Command::new(&vss)
                         .current_dir(path)
-                        .args(["-vss", &dunce::canonicalize(ls_json).unwrap().to_string_lossy(), "-russian"])
+                        .args([
+                            "-vss",
+                            &dunce::canonicalize(ls_json).unwrap().to_string_lossy(),
+                            "-russian",
+                        ])
                         .spawn()
                         .expect("Cannot exec process");
                     ctx.set_handled();
-
                 }
-            },
+            }
             druid::Event::Command(e) if e.is(RESOURCES_DIR_CHOOSEN) => {
                 let finfo = e.get_unchecked(RESOURCES_DIR_CHOOSEN);
                 let check = finfo.path.join("tabutask.prm");
@@ -102,7 +130,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                     // TODO: notif incorrect path to resource folder
                 }
                 ctx.set_handled();
-            },
+            }
             _ => (),
         }
         child.event(ctx, event, data, env)
@@ -140,7 +168,10 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
 fn resource_dir_selector() -> impl Widget<Option<String>> {
     Flex::row()
         .with_child(Label::new("Path to resources:"))
-        .with_flex_child(Label::dynamic(|d: &Option<String>, _| d.clone().unwrap_or_default()), 1.0)
+        .with_flex_child(
+            Label::dynamic(|d: &Option<String>, _| d.clone().unwrap_or_default()),
+            1.0,
+        )
         .with_child(Button::new("...").on_click(dlg_choose_resources))
 }
 
@@ -151,17 +182,4 @@ fn dlg_choose_resources(ctx: &mut EventCtx, _data: &mut Option<String>, _: &Env)
         // .cancel_command(cmd)
         .button_text("...");
     ctx.submit_command(commands::SHOW_OPEN_PANEL.with(fdialog));
-}
-
-#[cfg(test)]
-mod test {
-    #[test]
-    fn qq() {
-        let c = std::env::current_exe().unwrap().canonicalize().unwrap();
-        dbg!(&c);
-        let aa = dunce::canonicalize(c).unwrap();
-
-        dbg!(&aa);
-
-    }
 }
