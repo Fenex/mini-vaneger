@@ -1,28 +1,24 @@
 mod state;
+use state::*;
 
-use std::{
-    fs::{File, canonicalize},
-    path::Path,
-    process,
-};
-
+use std::{process};
 use druid::{
     commands,
-    widget::{Button, Checkbox, Controller, Flex, Label, List, Scroll},
-    AppLauncher, Application, Data, Env, EventCtx, FileDialogOptions, FileInfo, LensExt,
-    PlatformError, Selector, Widget, WidgetExt, WindowDesc, UnitPoint,
+    widget::{Button, Checkbox, Controller, Either, Flex, Image, Label, List, Scroll},
+    AppLauncher, Application, Color, Data, Env, EventCtx, FileDialogOptions, FileInfo, ImageBuf,
+    LensExt, PlatformError, Selector, UnitPoint, Widget, WidgetExt, WindowDesc,
 };
-
-use state::*;
 
 pub const BTN_RUN_CLICKED: Selector<()> = Selector::new("button `run` was clicked");
 pub const BTN_RESOURCE_CHOOSE_CLICKED: Selector<()> =
     Selector::new("button `choose resources` was clicked");
 pub const RESOURCES_DIR_CHOOSEN: Selector<FileInfo> = Selector::new("RESOURCES_DIR_CHOOSEN");
 
-const CONFIG_FILE_PATH: &str = "./scripts/ls.json";
+const EXCL: &'static [u8] = include_bytes!("../resources/excl_50.png");
 
 pub fn main() -> Result<(), PlatformError> {
+    env_logger::init();
+
     let main_window = WindowDesc::new(ui_builder())
         // .resizable(false)
         // .window_size((500, 400))
@@ -32,20 +28,20 @@ pub fn main() -> Result<(), PlatformError> {
 
     AppLauncher::with_window(main_window)
         .log_to_console()
-        .launch(AppState::new(Path::new(CONFIG_FILE_PATH)))
+        .launch(AppState::new())
 }
 
 fn ui_builder() -> impl Widget<AppState> {
     let scroll = Scroll::new(List::new(item))
         .vertical()
-        .lens(AppState::config.then(Config::addons));
+        .lens(AppState::config.then(AddonsCfg::addons));
     let buttons = Flex::row()
         .with_child(
             Button::from_label(Label::new("Run").with_text_size(25.))
                 .on_click(|ctx, _, _| {
                     ctx.submit_notification(BTN_RUN_CLICKED);
                 })
-                .disabled_if(|d: &AppState, _| d.resource_dir.is_none()),
+                .disabled_if(|d: &AppState, _| !d.settings.resource_dir_validated),
         )
         .with_spacer(20.)
         .with_child(
@@ -57,14 +53,14 @@ fn ui_builder() -> impl Widget<AppState> {
     Flex::column()
         .with_flex_child(block("Modifications:", scroll), 1.0)
         .with_child(block(
-            "Vangers' resources:",
-            resource_dir_selector().lens(AppState::resource_dir),
+            "Settings:",
+            settings().lens(AppState::settings.then(Settings2ResourceDirectoryState)),
         ))
         .with_spacer(5.)
         .with_child(buttons)
         .padding(10.)
         .controller(MainController)
-        // .debug_paint_layout()
+    // .debug_paint_layout()
 }
 
 fn block<W: Widget<T> + 'static, T: Data>(name: &str, inner: W) -> impl Widget<T> {
@@ -100,36 +96,41 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
     ) {
         match event {
             druid::Event::Notification(e) if e.is(BTN_RUN_CLICKED) => {
-                if let Some(ref dir) = data.resource_dir {
-                    let path = canonicalize(dir).unwrap();
-                    let ls_json_path = canonicalize(&data.config.path).unwrap();
-                    let ls_json = ls_json_path.parent().unwrap().to_string_lossy().to_string();
-                    let vss = ls_json_path
-                        .parent()
-                        .and_then(|p| p.parent())
-                        .map(|p| p.to_owned().join("vss.exe"))
-                        .unwrap();
-
-                    let _ = process::Command::new(&vss)
-                        .current_dir(path)
-                        .args([
-                            "-vss",
-                            &dunce::canonicalize(ls_json).unwrap().to_string_lossy(),
-                            "-russian",
-                        ])
-                        .spawn()
-                        .expect("Cannot exec process");
-                    ctx.set_handled();
-                    Application::global().quit();
+                if !data.settings.resource_dir.is_empty() && data.settings.resource_dir_validated {
+                    match dunce::canonicalize(&data.settings.resource_dir) {
+                        Ok(ref resource_dir) if resource_dir.is_dir() => {
+                            let vss = data
+                                .config
+                                .scripts_directory()
+                                .parent()
+                                .unwrap()
+                                .join("vss.exe");
+                            let _ = process::Command::new(&vss)
+                                .current_dir(resource_dir)
+                                .args([
+                                    "-vss",
+                                    data.config.scripts_directory().to_str().unwrap(),
+                                    "-russian",
+                                ])
+                                .spawn()
+                                .expect("Cannot exec process");
+                            ctx.set_handled();
+                            Application::global().quit();
+                        }
+                        _ => ctx.set_handled(),
+                    }
                 }
             }
             druid::Event::Command(e) if e.is(RESOURCES_DIR_CHOOSEN) => {
                 let finfo = e.get_unchecked(RESOURCES_DIR_CHOOSEN);
+                data.settings.resource_dir = finfo.path.to_string_lossy().to_string();
+
                 let check = finfo.path.join("tabutask.prm");
                 if check.exists() {
-                    data.resource_dir = Some(finfo.path.to_string_lossy().to_string())
+                    data.settings.resource_dir_validated = true;
+                    data.settings.save();
                 } else {
-                    // TODO: notif incorrect path to resource folder
+                    data.settings.resource_dir_validated = false;
                 }
                 ctx.set_handled();
             }
@@ -148,18 +149,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
     ) {
         for (a, b) in old_data.config.addons.iter().zip(data.config.addons.iter()) {
             if a != b {
-                let result = File::options()
-                    .write(true)
-                    .truncate(true)
-                    .open(&data.config.path)
-                    .map(|w| serde_json::to_writer_pretty(w, &data.config));
-
-                if let Ok(Ok(())) = result {
-                    println!("ok write");
-                } else {
-                    println!("err");
-                }
-
+                data.config.save();
                 break;
             }
         }
@@ -167,17 +157,33 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
     }
 }
 
-fn resource_dir_selector() -> impl Widget<Option<String>> {
+fn settings() -> impl Widget<ResourceDirectoryState> {
     Flex::row()
         .with_child(Label::new("Path to resources:"))
         .with_flex_child(
-            Label::dynamic(|d: &Option<String>, _| d.clone().unwrap_or_default()),
-            1.0,
+            Either::new(
+                |d: &ResourceDirectoryState, _| d.resource_dir.is_empty() || d.resource_dir_validated,
+                Label::new(|d: &String, _env: &_| format!("{}", d))
+                    .expand_width()
+                    .lens(ResourceDirectoryState::resource_dir),
+                Flex::row()
+                .with_flex_child(
+                    Label::new(|d: &String, _env: &_| d.clone())
+                    .with_text_color(Color::RED)
+                    .expand_width()
+                    .lens(ResourceDirectoryState::resource_dir),
+                    1.0,
+                )
+                .with_child(
+                    Image::new(ImageBuf::from_data(EXCL).unwrap())
+                )
+            ),
+            1.,
         )
-        .with_child(Button::new("...").on_click(dlg_choose_resources))
+        .with_child(Button::new("...").on_click(dlg_choose_resources).padding((5., 0., 0., 0.)))
 }
 
-fn dlg_choose_resources(ctx: &mut EventCtx, _data: &mut Option<String>, _: &Env) {
+fn dlg_choose_resources(ctx: &mut EventCtx, _data: &mut ResourceDirectoryState, _: &Env) {
     let fdialog = FileDialogOptions::new()
         .accept_command(RESOURCES_DIR_CHOOSEN)
         .select_directories()
