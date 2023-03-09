@@ -1,12 +1,15 @@
+#![windows_subsystem = "windows"]
+
 mod state;
+use log::trace;
 use state::*;
 
 use std::{process};
 use druid::{
     commands,
-    widget::{Button, Checkbox, Controller, Either, Flex, Image, Label, List, Scroll},
+    widget::{Button, Checkbox, Controller, Either, Flex, Image, Label, List, RadioGroup},
     AppLauncher, Application, Color, Data, Env, EventCtx, FileDialogOptions, FileInfo, ImageBuf,
-    LensExt, PlatformError, Selector, UnitPoint, Widget, WidgetExt, WindowDesc,
+    LensExt, PlatformError, Selector, Widget, WidgetExt, WindowDesc,
 };
 
 pub const BTN_RUN_CLICKED: Selector<()> = Selector::new("button `run` was clicked");
@@ -32,9 +35,8 @@ pub fn main() -> Result<(), PlatformError> {
 }
 
 fn ui_builder() -> impl Widget<AppState> {
-    let scroll = Scroll::new(List::new(item))
-        .vertical()
-        .lens(AppState::config.then(AddonsCfg::addons));
+    let scroll = List::new(item).lens(AppState::config.then(AddonsCfg::addons));
+
     let buttons = Flex::row()
         .with_child(
             Button::from_label(Label::new("Run").with_text_size(25.))
@@ -51,30 +53,26 @@ fn ui_builder() -> impl Widget<AppState> {
         .align_left();
 
     Flex::column()
-        .with_flex_child(block("Modifications:", scroll), 1.0)
-        .with_child(block(
-            "Settings:",
-            settings().lens(AppState::settings.then(Settings2ResourceDirectoryState)),
-        ))
+        .with_flex_child(block("Modifications:", scroll).scroll().vertical(), 1.0)
+        .with_child(block("Settings:", settings().lens(AppState::settings)))
         .with_spacer(5.)
         .with_child(buttons)
         .padding(10.)
         .controller(MainController)
-    // .debug_paint_layout()
+        // .debug_paint_layout()
 }
 
 fn block<W: Widget<T> + 'static, T: Data>(name: &str, inner: W) -> impl Widget<T> {
     Flex::column()
         .with_child(Label::new(name).with_text_size(22.0).align_left())
         .with_child(inner.padding((15., 0., 0., 0.)))
-        .align_vertical(UnitPoint::TOP_LEFT)
 }
 
 fn item() -> impl Widget<Item> {
     Flex::row()
         .with_child(Checkbox::new("").lens(Item::enabled))
         .with_flex_child(
-            Label::dynamic(|data: &String, _| data.to_string())
+            Label::dynamic(|data: &String, _| data.clone())
                 .with_text_size(18.)
                 .expand_width()
                 .lens(Item::name),
@@ -110,7 +108,10 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                                 .args([
                                     "-vss",
                                     data.config.scripts_directory().to_str().unwrap(),
-                                    "-russian",
+                                    match data.settings.language {
+                                        Language::En => "",
+                                        Language::Ru => "-russian",
+                                    },
                                 ])
                                 .spawn()
                                 .expect("Cannot exec process");
@@ -153,34 +154,52 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                 break;
             }
         }
+
+        if old_data.settings.language != data.settings.language {
+            data.settings.save();
+        }
+
         child.update(ctx, old_data, data, env)
     }
 }
 
-fn settings() -> impl Widget<ResourceDirectoryState> {
-    Flex::row()
-        .with_child(Label::new("Path to resources:"))
-        .with_flex_child(
-            Either::new(
-                |d: &ResourceDirectoryState, _| d.resource_dir.is_empty() || d.resource_dir_validated,
-                Label::new(|d: &String, _env: &_| format!("{}", d))
-                    .expand_width()
-                    .lens(ResourceDirectoryState::resource_dir),
-                Flex::row()
-                .with_flex_child(
-                    Label::new(|d: &String, _env: &_| d.clone())
-                    .with_text_color(Color::RED)
-                    .expand_width()
-                    .lens(ResourceDirectoryState::resource_dir),
-                    1.0,
-                )
-                .with_child(
-                    Image::new(ImageBuf::from_data(EXCL).unwrap())
-                )
-            ),
-            1.,
+fn settings() -> impl Widget<SettingsCfg> {
+    Flex::column()
+        .with_child(
+            Flex::row()
+            .with_child(Label::new("Path to resources:").with_text_color(Color::rgb8(180, 180, 180)))
+            .with_flex_child(
+                Either::new(
+                    |d: &ResourceDirectoryState, _| d.resource_dir.is_empty() || d.resource_dir_validated,
+                    Label::new(|d: &String, _env: &_| format!("{}", d))
+                        .expand_width()
+                        .lens(ResourceDirectoryState::resource_dir),
+                    Flex::row()
+                    .with_flex_child(
+                        Label::new(|d: &String, _env: &_| d.clone())
+                        .with_text_color(Color::RED)
+                        .expand_width()
+                        .lens(ResourceDirectoryState::resource_dir),
+                        1.0,
+                    )
+                    .with_child(
+                        Image::new(ImageBuf::from_data(EXCL).unwrap())
+                    )
+                ),
+                1.,
+            )
+            .with_child(Button::new("...").on_click(dlg_choose_resources).padding((5., 0., 0., 0.)))
+            .lens(Settings2ResourceDirectoryState)
         )
-        .with_child(Button::new("...").on_click(dlg_choose_resources).padding((5., 0., 0., 0.)))
+        .with_child(
+            Flex::row()
+            .with_child(Label::new("Language:").with_text_color(Color::rgb8(180, 180, 180)))
+            .with_flex_child(RadioGroup::row(vec![
+                ("EN", Language::En),
+                ("RU", Language::Ru),
+            ]), 1.0)
+            .lens(SettingsCfg::language)
+        )
 }
 
 fn dlg_choose_resources(ctx: &mut EventCtx, _data: &mut ResourceDirectoryState, _: &Env) {
