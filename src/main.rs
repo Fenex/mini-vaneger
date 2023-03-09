@@ -1,23 +1,22 @@
 #![windows_subsystem = "windows"]
 
 mod state;
-use log::trace;
 use state::*;
 
-use std::{process};
 use druid::{
     commands,
     widget::{Button, Checkbox, Controller, Either, Flex, Image, Label, List, RadioGroup},
     AppLauncher, Application, Color, Data, Env, EventCtx, FileDialogOptions, FileInfo, ImageBuf,
     LensExt, PlatformError, Selector, Widget, WidgetExt, WindowDesc,
 };
+use std::process;
 
 pub const BTN_RUN_CLICKED: Selector<()> = Selector::new("button `run` was clicked");
 pub const BTN_RESOURCE_CHOOSE_CLICKED: Selector<()> =
     Selector::new("button `choose resources` was clicked");
 pub const RESOURCES_DIR_CHOOSEN: Selector<FileInfo> = Selector::new("RESOURCES_DIR_CHOOSEN");
 
-const EXCL: &'static [u8] = include_bytes!("../resources/excl_50.png");
+const EXCL: &[u8] = include_bytes!("../resources/excl_50.png");
 
 pub fn main() -> Result<(), PlatformError> {
     env_logger::init();
@@ -59,7 +58,7 @@ fn ui_builder() -> impl Widget<AppState> {
         .with_child(buttons)
         .padding(10.)
         .controller(MainController)
-        // .debug_paint_layout()
+    // .debug_paint_layout()
 }
 
 fn block<W: Widget<T> + 'static, T: Data>(name: &str, inner: W) -> impl Widget<T> {
@@ -103,7 +102,7 @@ impl<W: Widget<AppState>> Controller<AppState, W> for MainController {
                                 .parent()
                                 .unwrap()
                                 .join("vss.exe");
-                            let _ = process::Command::new(&vss)
+                            let _ = process::Command::new(vss)
                                 .current_dir(resource_dir)
                                 .args([
                                     "-vss",
@@ -167,38 +166,44 @@ fn settings() -> impl Widget<SettingsCfg> {
     Flex::column()
         .with_child(
             Flex::row()
-            .with_child(Label::new("Path to resources:").with_text_color(Color::rgb8(180, 180, 180)))
-            .with_flex_child(
-                Either::new(
-                    |d: &ResourceDirectoryState, _| d.resource_dir.is_empty() || d.resource_dir_validated,
-                    Label::new(|d: &String, _env: &_| format!("{}", d))
-                        .expand_width()
-                        .lens(ResourceDirectoryState::resource_dir),
-                    Flex::row()
-                    .with_flex_child(
+                .with_child(
+                    Label::new("Path to resources:").with_text_color(Color::rgb8(180, 180, 180)),
+                )
+                .with_flex_child(
+                    Either::new(
+                        |d: &ResourceDirectoryState, _| {
+                            d.resource_dir.is_empty() || d.resource_dir_validated
+                        },
                         Label::new(|d: &String, _env: &_| d.clone())
-                        .with_text_color(Color::RED)
-                        .expand_width()
-                        .lens(ResourceDirectoryState::resource_dir),
-                        1.0,
-                    )
-                    .with_child(
-                        Image::new(ImageBuf::from_data(EXCL).unwrap())
-                    )
-                ),
-                1.,
-            )
-            .with_child(Button::new("...").on_click(dlg_choose_resources).padding((5., 0., 0., 0.)))
-            .lens(Settings2ResourceDirectoryState)
+                            .expand_width()
+                            .lens(ResourceDirectoryState::resource_dir),
+                        Flex::row()
+                            .with_flex_child(
+                                Label::new(|d: &String, _env: &_| d.clone())
+                                    .with_text_color(Color::RED)
+                                    .expand_width()
+                                    .lens(ResourceDirectoryState::resource_dir),
+                                1.0,
+                            )
+                            .with_child(Image::new(ImageBuf::from_data(EXCL).unwrap())),
+                    ),
+                    1.,
+                )
+                .with_child(
+                    Button::new("...")
+                        .on_click(dlg_choose_resources)
+                        .padding((5., 0., 0., 0.)),
+                )
+                .lens(Settings2ResourceDirectoryState),
         )
         .with_child(
             Flex::row()
-            .with_child(Label::new("Language:").with_text_color(Color::rgb8(180, 180, 180)))
-            .with_flex_child(RadioGroup::row(vec![
-                ("EN", Language::En),
-                ("RU", Language::Ru),
-            ]), 1.0)
-            .lens(SettingsCfg::language)
+                .with_child(Label::new("Language:").with_text_color(Color::rgb8(180, 180, 180)))
+                .with_flex_child(
+                    RadioGroup::row(vec![("EN", Language::En), ("RU", Language::Ru)]),
+                    1.0,
+                )
+                .lens(SettingsCfg::language),
         )
 }
 

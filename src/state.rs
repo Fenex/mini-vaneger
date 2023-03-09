@@ -39,8 +39,6 @@ impl AddonsCfg {
         dunce::canonicalize(&self.path).unwrap()
     }
 
-
-
     pub fn load() -> Self {
         let path_dir = if let Ok(path) = std::env::var(Self::ENV_ADDONS_DIR_PATH) {
             Cow::Owned(PathBuf::from(path))
@@ -55,7 +53,7 @@ impl AddonsCfg {
         }
 
         let mut config = File::open(&json_file)
-            .map(|f| serde_json::from_reader::<_, Self>(f))
+            .map(serde_json::from_reader::<_, Self>)
             .map_or_else(
                 |e| {
                     warn!("File open {:?}: {:?}", &json_file, e);
@@ -71,7 +69,7 @@ impl AddonsCfg {
                 |e| e,
             );
 
-        config.path = path_dir.to_owned().to_string_lossy().to_string();
+        config.path = path_dir.into_owned().to_string_lossy().to_string();
         config
     }
 
@@ -79,16 +77,16 @@ impl AddonsCfg {
         let path = self.path_to_json();
 
         let result = File::options()
-                .write(true)
-                .truncate(true)
-                .open(&path)
-                .map(|w| serde_json::to_writer_pretty(w, self));
+            .write(true)
+            .truncate(true)
+            .open(&path)
+            .map(|w| serde_json::to_writer_pretty(w, self));
 
-            if let Ok(Ok(())) = result {
-                log::info!("`{:?}`, saved JSON file.", &path);
-            } else {
-                log::warn!("`{:?}`, failed to save JSON file", &path);
-            }
+        if let Ok(Ok(())) = result {
+            log::info!("`{:?}`, saved JSON file.", &path);
+        } else {
+            log::warn!("`{:?}`, failed to save JSON file", &path);
+        }
     }
 }
 
@@ -140,7 +138,7 @@ impl SettingsCfg {
 
     pub fn load() -> Self {
         let path = std::env::var(Self::ENV_FILE_PATH)
-            .map(|p| PathBuf::from(p))
+            .map(PathBuf::from)
             .ok()
             .and_then(|p| {
                 if p.is_file() {
@@ -176,12 +174,10 @@ impl SettingsCfg {
     }
 
     pub fn file(&self) -> Cow<Path> {
-        Cow::from(
-            self.path
-                .as_ref()
-                .map(|p| Cow::Borrowed(p.as_path()))
-                .unwrap_or_else(|| Cow::Owned(PathBuf::from(Self::SETTINGS_FILE_PATH))),
-        )
+        self.path
+            .as_ref()
+            .map(|p| Cow::Borrowed(p.as_path()))
+            .unwrap_or_else(|| Cow::Owned(PathBuf::from(Self::SETTINGS_FILE_PATH)))
     }
 
     pub fn save(&self) {
