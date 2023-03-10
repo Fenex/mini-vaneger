@@ -194,6 +194,7 @@ fn settings() -> impl Widget<SettingsCfg> {
                         .on_click(dlg_choose_resources)
                         .padding((5., 0., 0., 0.)),
                 )
+                .padding(10.0)
                 .lens(Settings2ResourceDirectoryState),
         )
         .with_child(
@@ -203,6 +204,7 @@ fn settings() -> impl Widget<SettingsCfg> {
                     RadioGroup::row(vec![("EN", Language::En), ("RU", Language::Ru)]),
                     1.0,
                 )
+                .padding((10., 0., 0., 10.0))
                 .lens(SettingsCfg::language),
         )
 }
