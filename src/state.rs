@@ -41,9 +41,11 @@ impl AddonsCfg {
 
     pub fn load() -> Self {
         let path_dir = if let Ok(path) = std::env::var(Self::ENV_ADDONS_DIR_PATH) {
-            Cow::Owned(PathBuf::from(path))
+            PathBuf::from(path)
         } else {
-            Cow::Borrowed(Path::new(Self::ADDONS_FILE_PATH).parent().unwrap())
+            std::env::current_exe().unwrap()
+                .parent().unwrap()
+                .join(Path::new(Self::ADDONS_FILE_PATH).parent().unwrap())
         };
 
         let json_file = path_dir.join(Self::file_name());
@@ -69,7 +71,7 @@ impl AddonsCfg {
                 |e| e,
             );
 
-        config.path = path_dir.into_owned().to_string_lossy().to_string();
+        config.path = path_dir.to_string_lossy().to_string();
         config
     }
 
