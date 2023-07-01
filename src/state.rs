@@ -3,91 +3,118 @@ use std::{
     fs::{File, OpenOptions},
     io::BufReader,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use druid::{
-    im, {Data, Lens},
-};
+use druid::{im, Data, Lens};
+
 use log::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+const ENV_ADDONS_DIR_PATH: &str = "MINIVANEGER_ADDONS_DIR_PATH";
+
+fn load_addon(path: &Path) -> Option<AddonsCfg> {
+    if !path.join("vss.exe").is_file() {
+        trace!("{:?}: `vss.exe` not found or not a file, skipped", path);
+        None?
+    }
+
+    if !path.join("scripts").is_dir() {
+        trace!(
+            "{:?}: `scripts` not found or not a directory, skipped",
+            path
+        );
+        None?
+    }
+
+    let json_file = dunce::canonicalize(path.join("ls.json")).unwrap();
+
+    File::open(&json_file)
+        .map_or_else(
+            |e| {
+                warn!("Error: file open {:?}: {:?}", &json_file, e);
+                None
+            },
+            Some,
+        )
+        .map(serde_json::from_reader::<_, AddonsCfg>)?
+        .map_or_else(
+            |e| {
+                warn!("Error: deserialize {:?}: {:?}", &json_file, e);
+                None
+            },
+            Some,
+        )
+        .map(|mut cfg| {
+            cfg.dirname = json_file
+                .parent()
+                .unwrap()
+                .components()
+                .last()
+                .unwrap()
+                .as_os_str()
+                .to_string_lossy()
+                .to_string()
+                .into();
+            cfg.config_path = json_file.to_string_lossy().to_string().into();
+            cfg
+        })
+}
+
+fn load_addons() -> Vec<AddonsCfg> {
+    trace!("load_addons");
+    let path_dir = if let Ok(path) = std::env::var(ENV_ADDONS_DIR_PATH) {
+        PathBuf::from(path)
+    } else {
+        std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_owned()
+    };
+
+    trace!("directory to addons: `{:?}`", path_dir);
+
+    let mut addons = vec![];
+
+    if let Ok(mut read_dir) = std::fs::read_dir(path_dir) {
+        while let Some(Ok(entry)) = read_dir.next() {
+            if let Some(cfg) = load_addon(&entry.path()) {
+                addons.push(cfg);
+            }
+        }
+    }
+
+    addons
+}
 
 #[derive(Debug, Clone, Data, Default, Serialize, Deserialize, Lens)]
 pub struct AddonsCfg {
     pub addons: im::Vector<Item>,
     #[serde(skip)]
-    pub path: String,
+    pub config_path: Arc<String>,
+    #[serde(skip)]
+    pub dirname: Arc<String>,
+    #[serde(flatten)]
+    #[data(ignore)]
+    extra: im::HashMap<String, Value>,
 }
 
 impl AddonsCfg {
-    pub const ENV_ADDONS_DIR_PATH: &str = "MINIVANEGER_ADDONS_DIR_PATH";
-    pub const ADDONS_FILE_PATH: &str = "./scripts/ls.json";
-
-    pub fn file_name() -> &'static str {
-        Path::new(Self::ADDONS_FILE_PATH)
-            .file_name()
-            .and_then(|p| p.to_str())
-            .unwrap()
-    }
-
-    fn path_to_json(&self) -> PathBuf {
-        self.scripts_directory().join(Self::file_name())
-    }
-
-    /// returns full path to ./scripts/ls.json
-    pub fn scripts_directory(&self) -> PathBuf {
-        dunce::canonicalize(&self.path).unwrap()
-    }
-
-    pub fn load() -> Self {
-        let path_dir = if let Ok(path) = std::env::var(Self::ENV_ADDONS_DIR_PATH) {
-            PathBuf::from(path)
-        } else {
-            std::env::current_exe().unwrap()
-                .parent().unwrap()
-                .join(Path::new(Self::ADDONS_FILE_PATH).parent().unwrap())
-        };
-
-        let json_file = path_dir.join(Self::file_name());
-
-        if !json_file.is_file() {
-            return Default::default();
-        }
-
-        let mut config = File::open(&json_file)
-            .map(serde_json::from_reader::<_, Self>)
-            .map_or_else(
-                |e| {
-                    warn!("File open {:?}: {:?}", &json_file, e);
-                    Ok(Default::default())
-                },
-                |e| e,
-            )
-            .map_or_else(
-                |e| {
-                    warn!("Deserialize {:?}: {:?}", &json_file, e);
-                    Default::default()
-                },
-                |e| e,
-            );
-
-        config.path = path_dir.to_string_lossy().to_string();
-        config
-    }
-
     pub fn save(&self) {
-        let path = self.path_to_json();
+        let path = Path::new(&*self.config_path);
 
         let result = File::options()
             .write(true)
             .truncate(true)
-            .open(&path)
+            .open(path)
             .map(|w| serde_json::to_writer_pretty(w, self));
 
         if let Ok(Ok(())) = result {
-            log::info!("`{:?}`, saved JSON file.", &path);
+            log::info!("`{:?}`, saved JSON file.", path);
         } else {
-            log::warn!("`{:?}`, failed to save JSON file", &path);
+            log::warn!("`{:?}`, failed to save JSON file", path);
         }
     }
 }
@@ -103,15 +130,19 @@ pub struct Item {
 
 #[derive(Debug, Clone, Data, Serialize, Deserialize, Lens)]
 pub struct AppState {
-    pub config: AddonsCfg,
+    pub vss: im::Vector<AddonsCfg>,
     pub settings: SettingsCfg,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        trace!("AppState::new");
+        let t_vss = std::thread::spawn(load_addons);
+        let t_settings = std::thread::spawn(SettingsCfg::load);
+
         Self {
-            config: AddonsCfg::load(),
-            settings: SettingsCfg::load(),
+            vss: t_vss.join().unwrap().into(),
+            settings: t_settings.join().unwrap(),
         }
     }
 }
